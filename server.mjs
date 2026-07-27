@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 3847;
+const DEFAULT_INTERACTIONS_PORT = 3848;
 const MAX_BODY_BYTES = 64 * 1024;
 const SEND_COOLDOWN_MS = 3_000;
 const SLACK_SIGNATURE_MAX_AGE_SECONDS = 5 * 60;
@@ -235,6 +236,123 @@ async function deleteSlackMessage({ token, channel, timestamp, fetchImpl }) {
   return result;
 }
 
+function createInteractionHandler({
+  token,
+  signingSecret,
+  allowedDeleteUsers,
+  fetchImpl,
+}) {
+  return async (request, response) => {
+    try {
+      const rawBody = await readRawBody(request);
+      const timestamp = request.headers["x-slack-request-timestamp"];
+      const signature = request.headers["x-slack-signature"];
+
+      if (
+        !verifySlackSignature({
+          signingSecret,
+          timestamp,
+          signature,
+          rawBody,
+        })
+      ) {
+        respondJson(response, 401, {
+          ok: false,
+          error: "Invalid Slack signature.",
+        });
+        return;
+      }
+
+      const interaction = parseSlackInteraction(rawBody);
+      const action = interaction.actions?.[0];
+      const userId = interaction.user?.id;
+      const channel = interaction.channel?.id;
+      const messageTimestamp = interaction.message?.ts;
+
+      if (
+        interaction.type !== "block_actions" ||
+        action?.action_id !== DELETE_ACTION_ID
+      ) {
+        response.writeHead(200);
+        response.end();
+        return;
+      }
+
+      response.writeHead(200);
+      response.end();
+
+      if (!isDeleteAuthorized(userId, allowedDeleteUsers)) {
+        void sendInteractionFeedback(
+          interaction.response_url,
+          "You are not authorized to delete Trinity messages.",
+          fetchImpl,
+        ).catch(() => {});
+        return;
+      }
+
+      if (
+        !isValidDestination(channel) ||
+        !/^\d+\.\d+$/.test(messageTimestamp ?? "")
+      ) {
+        void sendInteractionFeedback(
+          interaction.response_url,
+          "Trinity could not identify the message to delete.",
+          fetchImpl,
+        ).catch(() => {});
+        return;
+      }
+
+      void deleteSlackMessage({
+        token,
+        channel,
+        timestamp: messageTimestamp,
+        fetchImpl,
+      }).catch((error) => {
+        void sendInteractionFeedback(
+          interaction.response_url,
+          `Trinity could not delete the message: ${error.message}`,
+          fetchImpl,
+        ).catch(() => {});
+      });
+    } catch {
+      respondJson(response, 400, {
+        ok: false,
+        error: "Invalid Slack interaction payload.",
+      });
+    }
+  };
+}
+
+export function createInteractionServer({
+  token,
+  signingSecret,
+  deleteAllowedUserIds,
+  fetchImpl = fetch,
+} = {}) {
+  const allowedDeleteUsers = parseAllowedUserIds(deleteAllowedUserIds);
+  const handleInteraction = createInteractionHandler({
+    token,
+    signingSecret,
+    allowedDeleteUsers,
+    fetchImpl,
+  });
+
+  return http.createServer(async (request, response) => {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+
+    if (request.method === "GET" && url.pathname === "/health") {
+      respondJson(response, 200, { ready: true });
+      return;
+    }
+    if (request.method === "POST" && url.pathname === "/slack/interactions") {
+      await handleInteraction(request, response);
+      return;
+    }
+
+    respondJson(response, 404, { ok: false, error: "Not found." });
+  });
+}
+
 export function createControllerServer({
   token,
   signingSecret = "",
@@ -269,82 +387,6 @@ export function createControllerServer({
         ready: true,
         deleteButtonEnabled,
       });
-      return;
-    }
-
-    if (request.method === "POST" && url.pathname === "/slack/interactions") {
-      try {
-        const rawBody = await readRawBody(request);
-        const timestamp = request.headers["x-slack-request-timestamp"];
-        const signature = request.headers["x-slack-signature"];
-
-        if (
-          !deleteButtonEnabled ||
-          !verifySlackSignature({
-            signingSecret,
-            timestamp,
-            signature,
-            rawBody,
-          })
-        ) {
-          respondJson(response, 401, {
-            ok: false,
-            error: "Invalid Slack signature or disabled delete controls.",
-          });
-          return;
-        }
-
-        const interaction = parseSlackInteraction(rawBody);
-        const action = interaction.actions?.[0];
-        const userId = interaction.user?.id;
-        const channel = interaction.channel?.id;
-        const messageTimestamp = interaction.message?.ts;
-
-        if (interaction.type !== "block_actions" || action?.action_id !== DELETE_ACTION_ID) {
-          response.writeHead(200);
-          response.end();
-          return;
-        }
-
-        response.writeHead(200);
-        response.end();
-
-        if (!isDeleteAuthorized(userId, allowedDeleteUsers)) {
-          void sendInteractionFeedback(
-            interaction.response_url,
-            "You are not authorized to delete Trinity messages.",
-            fetchImpl,
-          ).catch(() => {});
-          return;
-        }
-
-        if (!isValidDestination(channel) || !/^\d+\.\d+$/.test(messageTimestamp ?? "")) {
-          void sendInteractionFeedback(
-            interaction.response_url,
-            "Trinity could not identify the message to delete.",
-            fetchImpl,
-          ).catch(() => {});
-          return;
-        }
-
-        void deleteSlackMessage({
-          token,
-          channel,
-          timestamp: messageTimestamp,
-          fetchImpl,
-        }).catch((error) => {
-          void sendInteractionFeedback(
-            interaction.response_url,
-            `Trinity could not delete the message: ${error.message}`,
-            fetchImpl,
-          ).catch(() => {});
-        });
-      } catch {
-        respondJson(response, 400, {
-          ok: false,
-          error: "Invalid Slack interaction payload.",
-        });
-      }
       return;
     }
 
@@ -434,6 +476,9 @@ export function startController() {
     process.env.SLACK_DELETE_ALLOWED_USER_IDS ?? "";
   const host = process.env.HOST ?? DEFAULT_HOST;
   const port = Number(process.env.PORT ?? DEFAULT_PORT);
+  const interactionsPort = Number(
+    process.env.INTERACTIONS_PORT ?? DEFAULT_INTERACTIONS_PORT,
+  );
 
   if (!token.startsWith("xoxb-")) {
     console.error(
@@ -447,6 +492,18 @@ export function startController() {
     process.exitCode = 1;
     return;
   }
+  if (
+    !Number.isInteger(interactionsPort) ||
+    interactionsPort < 1 ||
+    interactionsPort > 65_535 ||
+    interactionsPort === port
+  ) {
+    console.error(
+      "INTERACTIONS_PORT must be a different integer between 1 and 65535.",
+    );
+    process.exitCode = 1;
+    return;
+  }
 
   const server = createControllerServer({
     token,
@@ -455,19 +512,22 @@ export function startController() {
     host,
     port,
   });
-  server.on("error", (error) => {
+  const handleServerError = (error) => {
     if (error.code === "EADDRINUSE") {
-      console.error(`Port ${port} is already in use.`);
+      console.error(`A required local port is already in use.`);
     } else {
       console.error(error);
     }
     process.exitCode = 1;
-  });
+  };
+  server.on("error", handleServerError);
   server.listen(port, host, () => {
     console.log(`Slack Message Controller: http://${host}:${port}`);
     if (signingSecret && parseAllowedUserIds(deleteAllowedUserIds).size) {
       console.log("Delete buttons: enabled");
-      console.log(`Slack Request URL: https://YOUR-PUBLIC-HOST/slack/interactions`);
+      console.log(
+        `Signed interaction listener: http://${host}:${interactionsPort}/slack/interactions`,
+      );
     } else {
       console.log(
         "Delete buttons: disabled (set SLACK_SIGNING_SECRET and SLACK_DELETE_ALLOWED_USER_IDS)",
@@ -475,6 +535,16 @@ export function startController() {
     }
     console.log("Press Control-C to stop.");
   });
+
+  if (signingSecret && parseAllowedUserIds(deleteAllowedUserIds).size) {
+    const interactionServer = createInteractionServer({
+      token,
+      signingSecret,
+      deleteAllowedUserIds,
+    });
+    interactionServer.on("error", handleServerError);
+    interactionServer.listen(interactionsPort, host);
+  }
 }
 
 const invokedPath = process.argv[1] ? pathToFileURL(process.argv[1]).href : "";

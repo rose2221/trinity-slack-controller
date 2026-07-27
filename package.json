@@ -1,6 +1,6 @@
 {
   "name": "trinity-slack-controller",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "description": "A local, dependency-free Slack message controller with templates, mentions, DMs, and allowlisted Delete buttons.",
   "type": "module",

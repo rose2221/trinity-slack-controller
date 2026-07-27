@@ -5,7 +5,7 @@ import { createHmac } from "node:crypto";
 import {
   buildMessageBlocks,
   buildSlackPayload,
-  createControllerServer,
+  createInteractionServer,
   isDeleteAuthorized,
   isValidDestination,
   normalizeDestination,
@@ -158,12 +158,10 @@ test("deletes an app message after an authorized signed button click", async (co
       }),
     };
   };
-  const server = createControllerServer({
+  const server = createInteractionServer({
     token: "xoxb-test-token",
     signingSecret,
     deleteAllowedUserIds: "U012ABCDEF",
-    host: "127.0.0.1",
-    port: 0,
     fetchImpl,
   });
   await new Promise((resolve, reject) => {

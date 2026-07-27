@@ -133,13 +133,14 @@ the bot token or signing secret.
 
 ### Give Slack a public HTTPS interaction URL
 
-Slack must reach the controller when someone clicks **Delete**. For local
-development, expose port `3847` through an HTTPS tunnel. For example, with
-Cloudflare Tunnel:
+Slack must reach the signed interaction listener when someone clicks
+**Delete**. The private controller remains on port `3847`; a second server on
+port `3848` serves only `/health` and `/slack/interactions`. Expose only port
+`3848` through an HTTPS tunnel. For example, with Cloudflare Tunnel:
 
 ```bash
 brew install cloudflared
-cloudflared tunnel --url http://127.0.0.1:3847
+cloudflared tunnel --url http://127.0.0.1:3848
 ```
 
 Copy the generated HTTPS hostname and append:
@@ -166,10 +167,12 @@ and rejects requests older than five minutes. It then checks the clicking
 member against `SLACK_DELETE_ALLOWED_USER_IDS`. A bot token can delete only
 messages posted by that same bot.
 
-The local server and HTTPS tunnel must both remain running. For continuous use,
-deploy the Node server to an authenticated backend host and configure the same
-environment variables there. GitHub Pages alone cannot run this endpoint or
-access GitHub Actions secrets.
+The private controller and HTTPS tunnel must both remain running. The tunnel
+exposes only the interaction-only listener; the token-backed message composer
+and send API remain private on `127.0.0.1:3847`. For continuous use, deploy the
+Node server to an authenticated backend host and configure the same environment
+variables there. GitHub Pages alone cannot run this endpoint or access GitHub
+Actions secrets.
 
 ## Finding Slack IDs
 
