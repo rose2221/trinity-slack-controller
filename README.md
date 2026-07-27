@@ -11,6 +11,8 @@ It supports:
 - real user mentions from `U…` member IDs;
 - channel, group, DM, and member destinations;
 - a confirmation dialog before every send;
+- optional red **Delete** buttons on messages posted by this app;
+- Slack-signature verification and an allowlist for destructive actions;
 - a loopback-only server that never exposes the bot token to the browser.
 
 ## Requirements
@@ -19,6 +21,7 @@ It supports:
 - Git
 - A Slack app installed in your workspace
 - A Slack bot token beginning with `xoxb-`
+- For Delete buttons: a rotated Slack signing secret and your Slack member ID
 
 No `npm install` is required. The project uses only Node.js built-in modules.
 
@@ -32,10 +35,15 @@ No `npm install` is required. The project uses only Node.js built-in modules.
 5. Install or reinstall the app to the workspace.
 6. Copy the **Bot User OAuth Token** beginning with `xoxb-`.
 7. For private channels, invite the bot before sending.
+8. To use Delete buttons, copy the **Signing Secret** from **Basic
+   Information → App Credentials**. Never use a secret that has been exposed.
 
 Slack API references:
 
 - [`chat.postMessage`](https://api.slack.com/methods/chat.postMessage)
+- [`chat.delete`](https://docs.slack.dev/reference/methods/chat.delete/)
+- [Handling Slack interactions](https://docs.slack.dev/interactivity/handling-user-interaction/)
+- [Block Kit button element](https://docs.slack.dev/reference/block-kit/block-elements/button-element/)
 - [Sending Slack messages](https://api.slack.com/messaging/sending)
 - [Slack token safety](https://api.slack.com/docs/oauth-safety)
 
@@ -91,6 +99,77 @@ PORT=4000 SLACK_BOT_TOKEN="$SLACK_BOT_TOKEN" npm start
 The server binds to `127.0.0.1` by default. Keep it loopback-only unless you
 understand the security implications of exposing a token-backed sender to a
 network.
+
+## Enable Delete buttons
+
+Delete controls are optional and disabled by default. When enabled, every
+message sent by this controller includes a red **Delete** button with Slack’s
+confirmation dialog.
+
+Set:
+
+```bash
+export SLACK_SIGNING_SECRET="your-rotated-signing-secret"
+export SLACK_DELETE_ALLOWED_USER_IDS="U012ABCDEF"
+```
+
+Allow several trusted members by separating their IDs with commas:
+
+```bash
+export SLACK_DELETE_ALLOWED_USER_IDS="U012ABCDEF,U999ZZZZZZZ"
+```
+
+Then start the controller:
+
+```bash
+read -rsp "Slack bot token: " SLACK_BOT_TOKEN
+echo
+export SLACK_BOT_TOKEN
+npm start
+```
+
+On macOS, `./start.command` can prompt for all three values without displaying
+the bot token or signing secret.
+
+### Give Slack a public HTTPS interaction URL
+
+Slack must reach the controller when someone clicks **Delete**. For local
+development, expose port `3847` through an HTTPS tunnel. For example, with
+Cloudflare Tunnel:
+
+```bash
+brew install cloudflared
+cloudflared tunnel --url http://127.0.0.1:3847
+```
+
+Copy the generated HTTPS hostname and append:
+
+```text
+/slack/interactions
+```
+
+Example:
+
+```text
+https://random-name.trycloudflare.com/slack/interactions
+```
+
+In the Slack app settings:
+
+1. Open **Interactivity & Shortcuts**.
+2. Turn **Interactivity** on.
+3. Paste the HTTPS URL into **Request URL**.
+4. Save changes.
+
+The controller verifies every interaction using Slack’s `X-Slack-Signature`
+and rejects requests older than five minutes. It then checks the clicking
+member against `SLACK_DELETE_ALLOWED_USER_IDS`. A bot token can delete only
+messages posted by that same bot.
+
+The local server and HTTPS tunnel must both remain running. For continuous use,
+deploy the Node server to an authenticated backend host and configure the same
+environment variables there. GitHub Pages alone cannot run this endpoint or
+access GitHub Actions secrets.
 
 ## Finding Slack IDs
 
@@ -154,7 +233,7 @@ npm test
 Expected result:
 
 ```text
-# pass 4
+# pass 10
 # fail 0
 ```
 
@@ -197,12 +276,28 @@ Hard-refresh the browser:
 - macOS: `Command-Shift-R`
 - Windows/Linux: `Control-Shift-R`
 
+### Delete button does not appear
+
+Both `SLACK_SIGNING_SECRET` and `SLACK_DELETE_ALLOWED_USER_IDS` must be set
+before starting the controller. The page status banner reports whether delete
+controls are enabled.
+
+### Clicking Delete shows a Slack error
+
+- Confirm **Interactivity & Shortcuts** uses the current HTTPS tunnel URL.
+- Confirm the tunnel and controller are still running.
+- Confirm your member ID is in `SLACK_DELETE_ALLOWED_USER_IDS`.
+- Confirm the bot token that is running the controller posted the message.
+- Rotate and replace any exposed or revoked credential.
+
 ## Security
 
 - Never commit a real Slack token.
 - Never paste a token into an issue, pull request, screenshot, or chat.
 - Rotate a token immediately if it is exposed.
 - Keep the server bound to `127.0.0.1`.
+- Allowlist only trusted member IDs for deletion.
+- Never expose the interaction endpoint without Slack-signature verification.
 - Review the destination and confirmation dialog before every send.
 - Use the minimum Slack scopes required for your workflow.
 

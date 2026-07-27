@@ -24,6 +24,28 @@ if [[ "$SLACK_BOT_TOKEN" != xoxb-* ]]; then
   exit 1
 fi
 
+if [[ -z "${SLACK_SIGNING_SECRET:-}" || -z "${SLACK_DELETE_ALLOWED_USER_IDS:-}" ]]; then
+  printf "Enable authenticated Delete buttons on messages posted by this app? (y/N): "
+  IFS= read -r enable_delete
+
+  if [[ "$enable_delete" == [Yy] ]]; then
+    if [[ -z "${SLACK_SIGNING_SECRET:-}" ]]; then
+      printf "Paste the rotated Slack signing secret (input stays hidden): "
+      stty -echo
+      IFS= read -r SLACK_SIGNING_SECRET
+      stty echo
+      printf "\n"
+      export SLACK_SIGNING_SECRET
+    fi
+
+    if [[ -z "${SLACK_DELETE_ALLOWED_USER_IDS:-}" ]]; then
+      printf "Slack member IDs allowed to delete (comma-separated U… IDs): "
+      IFS= read -r SLACK_DELETE_ALLOWED_USER_IDS
+      export SLACK_DELETE_ALLOWED_USER_IDS
+    fi
+  fi
+fi
+
 node server.mjs &
 server_pid=$!
 

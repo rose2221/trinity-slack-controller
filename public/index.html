@@ -65,6 +65,19 @@
       header p {
         margin: 4px 0 0;
       }
+      .feature-status {
+        margin: -12px 0 24px;
+        padding: 10px 12px;
+        border: 1px solid #353e53;
+        border-radius: 12px;
+        color: #9ca6b9;
+        background: #151a27;
+        font-size: 12px;
+      }
+      .feature-status.enabled {
+        border-color: rgba(94, 226, 184, 0.36);
+        color: #5ee2b8;
+      }
       label {
         display: block;
         margin: 20px 0 9px;
@@ -201,6 +214,9 @@
           <p>Saved messages, an editable composer, and direct-message support.</p>
         </div>
       </header>
+      <p id="delete-mode" class="feature-status">
+        Checking whether Slack delete buttons are configured…
+      </p>
 
       <div class="field-grid">
         <div>
@@ -298,12 +314,30 @@ Linked it to *TASK-123* as a dependency.`,
       const customButton = document.querySelector("#send-custom");
       const dmButton = document.querySelector("#send-dm");
       const status = document.querySelector("#status");
+      const deleteMode = document.querySelector("#delete-mode");
       const allButtons = [...quickButtons, customButton, dmButton];
 
       destinationInput.value = localStorage.getItem("slackControllerDestination") ?? "";
       mentionInput.value = localStorage.getItem("slackControllerMention") ?? "";
       dmInput.value = localStorage.getItem("slackControllerDm") ?? "";
       messageInput.value = templates.task.replace("{{mention}}", "the assignee");
+
+      async function loadControllerStatus() {
+        try {
+          const response = await fetch("/api/status");
+          const result = await response.json();
+          if (result.deleteButtonEnabled) {
+            deleteMode.textContent =
+              "Delete buttons enabled · Allowlisted members can delete messages posted by this app.";
+            deleteMode.classList.add("enabled");
+          } else {
+            deleteMode.textContent =
+              "Delete buttons disabled · Configure the signing secret and allowed member IDs.";
+          }
+        } catch {
+          deleteMode.textContent = "Unable to read controller configuration.";
+        }
+      }
 
       function mentionText() {
         const memberId = mentionInput.value.trim().toUpperCase();
@@ -360,7 +394,9 @@ Linked it to *TASK-123* as a dependency.`,
           if (!response.ok || !result.ok) {
             throw new Error(result.error || "Slack did not accept the message.");
           }
-          status.textContent = `Sent successfully to ${result.channel}.`;
+          status.textContent = result.deleteButtonIncluded
+            ? `Sent successfully to ${result.channel} with a Delete button.`
+            : `Sent successfully to ${result.channel}.`;
           status.className = "success";
         } catch (error) {
           status.textContent = error.message;
@@ -390,6 +426,8 @@ Linked it to *TASK-123* as a dependency.`,
       dmButton.addEventListener("click", () => {
         sendMessage(dmTemplate, dmButton, dmInput);
       });
+
+      loadControllerStatus();
     </script>
   </body>
 </html>
