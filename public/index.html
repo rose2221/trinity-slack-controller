@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Slack Message Controller</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        background: #0d1017;
+        color: #eef1f8;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        min-height: 100vh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        padding: 28px;
+        background:
+          radial-gradient(circle at 15% 10%, rgba(124, 92, 255, 0.2), transparent 30rem),
+          radial-gradient(circle at 85% 90%, rgba(45, 212, 191, 0.13), transparent 28rem),
+          #0d1017;
+      }
+      main {
+        width: min(820px, 100%);
+        padding: clamp(24px, 5vw, 44px);
+        border: 1px solid #293041;
+        border-radius: 24px;
+        background: rgba(20, 24, 34, 0.94);
+        box-shadow: 0 28px 90px rgba(0, 0, 0, 0.42);
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-bottom: 28px;
+      }
+      .mark {
+        width: 46px;
+        height: 46px;
+        display: grid;
+        place-items: center;
+        border-radius: 14px;
+        background: linear-gradient(145deg, #806cff, #5542d9);
+        box-shadow: 0 9px 28px rgba(100, 77, 230, 0.34);
+        font-size: 21px;
+      }
+      h1 {
+        margin: 0;
+        font-size: clamp(22px, 4vw, 30px);
+        letter-spacing: -0.035em;
+      }
+      header p,
+      .hint,
+      #status {
+        color: #929caf;
+        font-size: 13px;
+      }
+      header p {
+        margin: 4px 0 0;
+      }
+      label {
+        display: block;
+        margin: 20px 0 9px;
+        color: #c7cddd;
+        font-size: 13px;
+        font-weight: 700;
+      }
+      input,
+      textarea {
+        width: 100%;
+        border: 1px solid #323a4d;
+        border-radius: 13px;
+        outline: none;
+        background: #10141e;
+        color: #f7f8fb;
+        font: inherit;
+      }
+      input {
+        padding: 13px 15px;
+        text-transform: uppercase;
+      }
+      textarea {
+        min-height: 250px;
+        padding: 16px;
+        resize: vertical;
+        line-height: 1.5;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 13px;
+      }
+      input:focus,
+      textarea:focus {
+        border-color: #7765ed;
+        box-shadow: 0 0 0 4px rgba(119, 101, 237, 0.14);
+      }
+      .field-grid,
+      .quick-grid,
+      .dm-row {
+        display: grid;
+        gap: 12px;
+      }
+      .field-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .quick-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        margin: 12px 0;
+      }
+      button {
+        width: 100%;
+        border: 0;
+        border-radius: 14px;
+        padding: 15px 18px;
+        background: linear-gradient(135deg, #806cff, #6753e6);
+        color: white;
+        font: inherit;
+        font-weight: 800;
+        cursor: pointer;
+      }
+      button:disabled {
+        cursor: wait;
+        opacity: 0.58;
+      }
+      .quick-button {
+        min-height: 78px;
+        padding: 14px;
+        border: 1px solid #353e53;
+        background: #1a2030;
+        text-align: left;
+      }
+      .quick-button strong,
+      .quick-button span {
+        display: block;
+      }
+      .quick-button span {
+        margin-top: 5px;
+        color: #9ca6b9;
+        font-size: 12px;
+        font-weight: 500;
+      }
+      .dm-panel {
+        margin-top: 24px;
+        padding: 18px;
+        border: 1px solid #353e53;
+        border-radius: 16px;
+        background: rgba(16, 20, 30, 0.8);
+      }
+      .dm-panel label {
+        margin-top: 0;
+      }
+      .dm-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+      }
+      .dm-row button {
+        width: auto;
+        white-space: nowrap;
+      }
+      .hint {
+        margin: 10px 2px 0;
+        line-height: 1.5;
+      }
+      #status {
+        min-height: 22px;
+        margin: 14px 2px 0;
+      }
+      #status.success {
+        color: #5ee2b8;
+      }
+      #status.error {
+        color: #ff8792;
+      }
+      .privacy {
+        margin-top: 24px;
+        padding-top: 20px;
+        border-top: 1px solid #293041;
+      }
+      @media (max-width: 680px) {
+        .field-grid,
+        .quick-grid,
+        .dm-row {
+          grid-template-columns: 1fr;
+        }
+        .dm-row button {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="mark" aria-hidden="true">✦</div>
+        <div>
+          <h1>Slack Message Controller</h1>
+          <p>Saved messages, an editable composer, and direct-message support.</p>
+        </div>
+      </header>
+
+      <div class="field-grid">
+        <div>
+          <label for="destination">Channel or conversation ID</label>
+          <input
+            id="destination"
+            autocomplete="off"
+            maxlength="21"
+            placeholder="C012ABCDEF"
+            spellcheck="false"
+          />
+        </div>
+        <div>
+          <label for="mention">Optional member ID to mention</label>
+          <input
+            id="mention"
+            autocomplete="off"
+            maxlength="21"
+            placeholder="U012ABCDEF"
+            spellcheck="false"
+          />
+        </div>
+      </div>
+
+      <label for="message">Editable message</label>
+      <textarea id="message" spellcheck="true"></textarea>
+
+      <label>Saved one-click messages</label>
+      <div class="quick-grid">
+        <button class="quick-button" data-template="task" type="button">
+          <strong>Send task update</strong>
+          <span>Related work and dependency</span>
+        </button>
+        <button class="quick-button" data-template="auto" type="button">
+          <strong>Send auto-update</strong>
+          <span>Completion from meeting notes</span>
+        </button>
+        <button class="quick-button" data-template="overlap" type="button">
+          <strong>Send overlap alert</strong>
+          <span>Possible duplicate work</span>
+        </button>
+      </div>
+
+      <button id="send-custom" type="button">Send edited message</button>
+
+      <section class="dm-panel" aria-labelledby="dm-label">
+        <label id="dm-label" for="dm-destination">Direct message a member</label>
+        <div class="dm-row">
+          <input
+            id="dm-destination"
+            autocomplete="off"
+            maxlength="21"
+            placeholder="Member or DM ID — U… or D…"
+            spellcheck="false"
+          />
+          <button id="send-dm" type="button">Send DM update</button>
+        </div>
+        <p class="hint">
+          A U-prefixed member ID opens the bot conversation; an existing D-prefixed
+          conversation ID targets that DM directly.
+        </p>
+      </section>
+
+      <p id="status" role="status" aria-live="polite"></p>
+      <p class="hint privacy">
+        Local-only · The token stays in the Node process and is never sent to the page
+        or stored in browser storage.
+      </p>
+    </main>
+
+    <script>
+      const templates = {
+        task: `I found an existing task related to this discussion.
+
+• :arrows_counterclockwise: Updated *TASK-123* (assigned to {{mention}}) – *“Migrate service integration to API v2”*
+Added a new subtask: *“Implement scoped API key support.”*
+
+• :white_check_mark: Created *TASK-124* (Open) – *“Update API v2 documentation and migration guide.”*
+Linked it to *TASK-123* as a dependency.`,
+        auto: `*Auto-update:* {{mention}} confirmed during today’s standup that the implementation is complete. Based on the meeting transcript, I automatically updated *TASK-123*. :white_check_mark:`,
+        overlap: `🚨 Potential overlap detected! Another teammate appears to be working on API key rotation, which overlaps with *TASK-123*, currently assigned to {{mention}}.`,
+      };
+      const dmTemplate = `👤 *Team update*
+
+• Reviewed the API v2 rollout checklist with the team.
+• Finalized the authentication and deployment strategy.
+• Updating the migration guide before rollout.
+• Coordinating the rollout timeline with the backend team.`;
+
+      const destinationInput = document.querySelector("#destination");
+      const mentionInput = document.querySelector("#mention");
+      const messageInput = document.querySelector("#message");
+      const dmInput = document.querySelector("#dm-destination");
+      const quickButtons = [...document.querySelectorAll(".quick-button")];
+      const customButton = document.querySelector("#send-custom");
+      const dmButton = document.querySelector("#send-dm");
+      const status = document.querySelector("#status");
+      const allButtons = [...quickButtons, customButton, dmButton];
+
+      destinationInput.value = localStorage.getItem("slackControllerDestination") ?? "";
+      mentionInput.value = localStorage.getItem("slackControllerMention") ?? "";
+      dmInput.value = localStorage.getItem("slackControllerDm") ?? "";
+      messageInput.value = templates.task.replace("{{mention}}", "the assignee");
+
+      function mentionText() {
+        const memberId = mentionInput.value.trim().toUpperCase();
+        return /^U[A-Z0-9]{8,20}$/.test(memberId) ? `<@${memberId}>` : "the assignee";
+      }
+
+      function prepareTemplate(template) {
+        return template.replaceAll("{{mention}}", mentionText());
+      }
+
+      function destinationIsValid(value) {
+        return /^[CGDU][A-Z0-9]{8,20}$/.test(value);
+      }
+
+      async function sendMessage(text, activeButton, destinationElement) {
+        const destination = destinationElement.value.trim().toUpperCase();
+        const preparedText = text.trim();
+
+        status.className = "";
+        if (!destinationIsValid(destination)) {
+          status.textContent =
+            "Enter a Slack ID beginning with C, G, D, or U.";
+          status.className = "error";
+          destinationElement.focus();
+          return;
+        }
+        if (!preparedText) {
+          status.textContent = "The message cannot be empty.";
+          status.className = "error";
+          return;
+        }
+        if (!window.confirm(`Send this message to ${destination}?`)) {
+          return;
+        }
+
+        localStorage.setItem("slackControllerDestination", destinationInput.value);
+        localStorage.setItem("slackControllerMention", mentionInput.value);
+        localStorage.setItem("slackControllerDm", dmInput.value);
+
+        const originalLabel = activeButton.innerHTML;
+        allButtons.forEach((button) => {
+          button.disabled = true;
+        });
+        activeButton.textContent = "Sending…";
+        status.textContent = "Contacting Slack…";
+
+        try {
+          const response = await fetch("/api/send", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ destination, text: preparedText }),
+          });
+          const result = await response.json();
+          if (!response.ok || !result.ok) {
+            throw new Error(result.error || "Slack did not accept the message.");
+          }
+          status.textContent = `Sent successfully to ${result.channel}.`;
+          status.className = "success";
+        } catch (error) {
+          status.textContent = error.message;
+          status.className = "error";
+        } finally {
+          allButtons.forEach((button) => {
+            button.disabled = false;
+          });
+          activeButton.innerHTML = originalLabel;
+        }
+      }
+
+      quickButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          const text = prepareTemplate(
+            templates[button.dataset.template] ?? templates.task,
+          );
+          messageInput.value = text;
+          sendMessage(text, button, destinationInput);
+        });
+      });
+
+      customButton.addEventListener("click", () => {
+        sendMessage(messageInput.value, customButton, destinationInput);
+      });
+
+      dmButton.addEventListener("click", () => {
+        sendMessage(dmTemplate, dmButton, dmInput);
+      });
+    </script>
+  </body>
+</html>

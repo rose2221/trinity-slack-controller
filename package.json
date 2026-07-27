@@ -1,0 +1,16 @@
+{
+  "name": "trinity-slack-controller",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A local, dependency-free Slack message controller with templates, editable messages, mentions, and DMs.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "check": "node --check server.mjs",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}
